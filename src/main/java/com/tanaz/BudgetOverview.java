@@ -3,23 +3,18 @@ package com.tanaz;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.HashMap;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
-public class Transaction {
-    private final TransactionStore<TransactionDetails> transactions = new TransactionStore<>();
-    private final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH.mm");
-    private TransactionType type;
-    private String counterAccountNumber;
-    private HashMap<String, TransactionType> transactionTypes; //Ska dessa bort?
-    private HashMap<String, TransactionDetails> transactionDetails;
+public class BudgetOverview {
+    protected final TransactionStore<TransactionDetails> transactions;
+    private final DateTimeFormatter formatter;
 
-    public Transaction() {
-        this.transactionTypes = new HashMap<>();
-        this.transactionDetails = new HashMap<>();
+    public BudgetOverview() {
+        this.transactions = new TransactionStore<>();
+        this.formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH.mm");
     }
 
     public void printMenu() {
@@ -29,7 +24,8 @@ public class Transaction {
         IO.println("2. View all transactions");
         IO.println("3. View balance");
         IO.println("4. Filter transactions");
-        IO.println("5. Save to a BLL file");
+        IO.println("5. Save to a file");
+        IO.println("6. Load from file");
         IO.println("e. Exit");
     }
 
@@ -40,33 +36,32 @@ public class Transaction {
             if ("1".equals(option)) {
                 addTransaction();
             } else if ("2".equals(option)) {
-                viewTransaction();
+                viewAllTransactions();
             } else if ("3".equals(option)) {
                 viewBalance();
             } else if ("4".equals(option)) {
-                filterTransaction();
+                filterTransactions();
             } else if ("5".equals(option)) {
-                saveFile();
+                saveToFile();
+            } else if ("6".equals(option)) {
+                loadFromFile();
             } else if ("e".equals(option)) {
-                exit();
+                IO.println("Bye bye");
+                break;
             }
         }
     }
 
-    public void exit() {
-        IO.println("Bye bye");
-        System.exit(0);
-    }
-
     public void addTransaction() {
-        String accountNumber = readAccountNumber("Accountnumber:");
+        String accountNumber = readAccountNumber();
         BigDecimal amount = readAmount();
-        option(accountNumber, amount);
+        TransactionType type = readTransactionType();
+        registerTransaction(accountNumber, amount, type);
     }
 
-    private String readAccountNumber(String input) {
+    private String readAccountNumber() {
         while (true) {
-            IO.println(input);
+            IO.println("Account number:");
             String accountNumber = IO.readln();
             if (accountNumber != null && !accountNumber.isBlank()) {
                 return accountNumber.trim();
@@ -83,14 +78,12 @@ public class Transaction {
 
             try {
                 BigDecimal amount = new BigDecimal(input.trim());
-
                 if (amount.compareTo(BigDecimal.ZERO) <= 0) {
                     IO.println("Amount must be greater than zero!");
                     continue;
                 }
 
                 return amount;
-
             } catch (NumberFormatException e) {
                 IO.println("Invalid amount! Please enter a valid number.");
             }
@@ -100,76 +93,43 @@ public class Transaction {
     public void printTransactionType() {
         IO.println("Menu");
         IO.println("Select an option:");
-        IO.println("1. Deposit");
-        IO.println("2. Withdrawal");
-        IO.println("3. Transfer");
+        IO.println("1. Income");
+        IO.println("2. Expense");
     }
 
-    public void option(String accountNumber, BigDecimal amount) {
+    public TransactionType readTransactionType() {
         while (true) {
             printTransactionType();
             String option = IO.readln();
 
             if ("1".equals(option)) {
-                deposit();
-                break;
+                return TransactionType.INCOME;
             } else if ("2".equals(option)) {
-                withdrawal();
-                break;
-            } else if ("3".equals(option)) {
-                transfer();
-                break;
+                return TransactionType.EXPENSE;
             } else {
                 IO.println("Invalid option! Please choose 1, 2 or 3.");
             }
         }
-
-        registerTransaction(accountNumber, amount);
     }
 
-    public void deposit() {
-        type = TransactionType.DEPOSIT;
-        counterAccountNumber = null;
-        IO.println("Deposit selected");
-    }
-
-    public void withdrawal() {
-        type = TransactionType.WITHDRAWAL;
-        counterAccountNumber = null;
-        IO.println("Withdrawal selected");
-    }
-
-    public void transfer() {
-        type = TransactionType.TRANSFER;
-        counterAccountNumber = readAccountNumber("Recipient account number:");
-        IO.println("Transfer selected");
-    }
-
-    private void registerTransaction(String accountNumber, BigDecimal amount) {
+    private void registerTransaction(String accountNumber, BigDecimal amount, TransactionType type) {
         LocalDateTime dateTime = LocalDateTime.now();
 
-        TransactionDetails details = new TransactionDetails(accountNumber, counterAccountNumber, dateTime, amount, type);
-
+        TransactionDetails details = new TransactionDetails(accountNumber, dateTime, amount, type);
         transactions.add(details);
-
         IO.println("Transaction date and time: " + dateTime.format(formatter));
         IO.println("Thank you! The transaction is now registered");
     }
 
-    public void viewTransaction() {
-        if (transactions.getAll().isEmpty()) {
+    public void viewAllTransactions() {
+        if (transactions.isEmpty()) {
             IO.println("There are no transactions");
             return;
         }
 
         for (TransactionDetails transaction : transactions.getAll()) {
-            IO.println("Type: " + transaction.transactionType());
+            IO.println("Type: " + transaction.type());
             IO.println("From account: " + transaction.accountNumber());
-
-            if (transaction.counterAccountNumber() != null) {
-                IO.println("To counter account: " + transaction.counterAccountNumber());
-            }
-
             IO.println("Amount: " + transaction.amount());
             IO.println("Date: " + transaction.date().format(formatter));
             IO.println("------------------------------");
@@ -177,19 +137,19 @@ public class Transaction {
     }
 
     public void viewBalance() {
-        String accountNumber = readAccountNumber("Accountnumber:");
+        String accountNumber = readAccountNumber();
         BigDecimal balance = viewBalanceFor(accountNumber);
-        IO.println("Balance: " + balance); 
+        IO.println("Balance: " + balance);
     }
 
-    private BigDecimal viewBalanceFor(String accountNumber) {
+    protected BigDecimal viewBalanceFor(String accountNumber) {
         BigDecimal balance = BigDecimal.ZERO;
 
         for (TransactionDetails transaction : transactions.getAll()) {
             if (transaction.accountNumber().equals(accountNumber)) {
-                if (transaction.transactionType() == TransactionType.DEPOSIT) {
+                if (transaction.type() == TransactionType.INCOME) {
                     balance = balance.add(transaction.amount());
-                } else if (transaction.transactionType() == TransactionType.WITHDRAWAL) {
+                } else if (transaction.type() == TransactionType.EXPENSE) {
                     balance = balance.subtract(transaction.amount());
                 }
             }
@@ -198,18 +158,14 @@ public class Transaction {
         return balance;
     }
 
-    public void filterTransaction() {
-        String accountNumber = readAccountNumber("Enter accountnumber to filter:");
+    public void filterTransactions() {
+        String accountNumber = readAccountNumber();
         boolean found = false;
 
         for (TransactionDetails transaction : transactions.getAll()) {
             if (transaction.accountNumber().equals(accountNumber)) {
-                IO.println("Type: " + transaction.transactionType());
+                IO.println("Type: " + transaction.type());
                 IO.println("From account: " + transaction.accountNumber());
-                if (transaction.counterAccountNumber() != null) {
-                    IO.println("Counter account: " + transaction.counterAccountNumber());
-                }
-
                 IO.println("Amount: " + transaction.amount());
                 IO.println("Date: " + transaction.date().format(formatter));
                 IO.println("------------------------------");
@@ -222,22 +178,40 @@ public class Transaction {
         }
     }
 
-    public void saveFile() {
-        if (transactions.getAll().isEmpty()) {
+    public void saveToFile() {
+        if (transactions.isEmpty()) {
             IO.println("There are no transactions to save.");
             return;
         }
+        IO.println("Filename:");
+        String fileName = IO.readln();
         try {
-            List<String> lines = new java.util.ArrayList<>();
+            List<String> lines = transactions.getAll().stream()
+                    .map((transaction) -> transaction.accountNumber() + ";" + transaction.date().format(formatter) + ";" + transaction.amount() + ";" + transaction.type())
+                    .toList();
 
-            for (TransactionDetails transaction : transactions.getAll()) {String line = transaction.accountNumber() + " " + transaction.counterAccountNumber() + " " + transaction.date() + " " + transaction.amount() + " " + transaction.transactionType();lines.add(line);}
-
-            Files.write(Path.of("transactions.txt1"), lines);
+            Files.write(Path.of(fileName), lines);
             IO.println("Transactions saved successfully!");
-
         } catch (IOException exception) {
-            IO.println("Could not save file.");
+            IO.println("Could not save file: " + exception.getMessage());
         }
+    }
+
+    protected void loadFromFile() {
+        IO.println("Filename:");
+        String fileName = IO.readln();
+        try {
+            List<String> lines = Files.readAllLines(Path.of(fileName));
+            lines.forEach(this::addTransactionFromString);
+            IO.println(lines.size() + " transactions loaded successfully!");
+        } catch (IOException exception) {
+            IO.println("Could not load file: " + exception.getMessage());
+        }
+    }
+
+    protected void addTransactionFromString(String line) {
+        String[] values = line.split(";");
+        transactions.add(new TransactionDetails(values[0], LocalDateTime.parse(values[1], formatter), new BigDecimal(values[2]), TransactionType.valueOf(values[3])));
     }
 }
 
