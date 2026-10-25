@@ -4,6 +4,7 @@ target/
 !**/src/test/**/target/
 .kotlin
 **/*.csv
+!src/test/resources/*.csv
 
 ### IntelliJ IDEA ###
 .idea
